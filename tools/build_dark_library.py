@@ -57,8 +57,8 @@ def main() -> None:
             }
         )
 
-    if len(points) != 10:
-        raise RuntimeError(f"expected 10 exposure points, got {len(points)}")
+    if len(points) < 2:
+        raise RuntimeError(f"expected at least two exposure points, got {len(points)}")
     output = {
         "method": "per-pixel arithmetic mean of 10 native Bayer dark frames",
         "interpolation": "linear per pixel between bracketing actual exposure times",
@@ -72,4 +72,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -143,7 +143,10 @@ def main() -> None:
             completed = 0
             previous_timestamp = None
             while completed < args.frames:
-                deadline = time.monotonic() + 2.0
+                # Long dark calibrations can legitimately take seconds per
+                # request; keep a fixed margin above the configured duration.
+                request_timeout_s = max(2.0, args.frame_us / 1_000_000 + 1.0)
+                deadline = time.monotonic() + request_timeout_s
                 ready_requests = []
                 while not ready_requests and time.monotonic() < deadline:
                     ready_requests = manager.get_ready_requests()

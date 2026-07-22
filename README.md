@@ -71,10 +71,32 @@ The preview then uses a bilinear BGGR demosaic, fixed white balance, a fixed
 merged frame's 99.5th percentile. Exposure is scaled to that white point, a
 Reinhard curve `x / (1 + x)` compresses highlights, and the result is encoded
 to sRGB and H.264. There is no local tone mapping or temporal adaptation.
+This MP4 is a viewing convenience only, not the scientific output.
 
 ```bash
 python3 tools/merge_hdr_sequence.py RUN_DIR
 ```
+
+## Linear radiance output
+
+The measurement product follows the radiometric order explicitly:
+
+1. interpolate a per-pixel virtual dark at the frame's actual metadata exposure;
+2. subtract it from the measurement in native Bayer space;
+3. divide the result by actual exposure time in seconds;
+4. retain float32 Bayer samples, including negative noise excursions.
+
+No demosaic, clamp, white balance, colour matrix, gamma, tone curve, or video
+encoding is applied. Alternating exposure pairs may be fused with a saturation
+cross-fade after both sources have independently reached linear radiance units.
+
+```bash
+python3 tools/calibrate_linear_radiance.py RUN_DIR DARK_LIBRARY_DIR
+```
+
+The output is little-endian float32 BGGR Bayer radiance in RAW10 counts per
+second. Untouched calibrated sources, optional fused pairs, hashes, and exact
+processing metadata are recorded under `linear_radiance/`.
 
 ## Dark-frame calibration library
 
