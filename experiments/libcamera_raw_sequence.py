@@ -63,8 +63,6 @@ def main() -> None:
     if args.frames <= args.discard:
         raise ValueError("frames must be greater than discard")
     retained = args.frames - args.discard
-    if retained % 2:
-        raise ValueError("the retained frame count must be even")
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     manager = libcam.CameraManager.singleton()

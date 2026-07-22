@@ -98,6 +98,11 @@ The output is little-endian float32 BGGR Bayer radiance in RAW10 counts per
 second. Untouched calibrated sources, optional fused pairs, hashes, and exact
 processing metadata are recorded under `linear_radiance/`.
 
+For independent stills rather than a stream, `scripts/capture_still_bracket.sh`
+captures one retained RAW image per 1–2–5 exposure point from 1 ms through
+10 seconds. Each point has its own metadata and hash and can be passed to the
+same calibration tool independently.
+
 ## Dark-frame calibration library
 
 Dark signal depends on pixel, exposure, analogue gain, and sensor temperature.
