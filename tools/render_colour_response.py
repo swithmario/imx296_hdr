@@ -56,9 +56,24 @@ def main() -> None:
     robust_output = stack_dir / "merged_radiance_rgb_colour_response_robust_linear16.tiff"
     write_rgb48_tiff(robust_output, robust_view)
 
+    positive = corrected[corrected > 0]
+    white = max(float(np.percentile(positive, 99.5)), 1e-6)
+    exposed = np.maximum(corrected, 0.0) * (4.0 / white)
+    reinhard = exposed / (1.0 + exposed)
+    srgb = np.where(
+        reinhard <= 0.0031308,
+        reinhard * 12.92,
+        1.055 * np.power(reinhard, 1.0 / 2.4) - 0.055,
+    )
+    tone_view = np.rint(np.clip(srgb, 0.0, 1.0) * 65535.0).astype(np.uint16)
+    tone_view = np.ascontiguousarray(np.rot90(tone_view, 2))
+    tone_output = stack_dir / "merged_radiance_rgb_colour_response_tonemapped16.tiff"
+    write_rgb48_tiff(tone_output, tone_view)
+
     record = {
         "output": output.name,
         "robust_linear_preview": robust_output.name,
+        "tonemapped_preview": tone_output.name,
         "source": stack_manifest["stack"],
         "processing": [
             "bilinear BGGR demosaic in linear radiance",
@@ -73,9 +88,15 @@ def main() -> None:
         "corrected_input_max": upper,
         "robust_shared_percentiles": [0.1, 99.9],
         "robust_shared_window": [robust_lower, robust_upper],
+        "tonemap": {
+            "exposure_multiplier_relative_to_positive_99_5_percentile": 4.0,
+            "white_radiance": white,
+            "operator": "Reinhard x/(1+x)",
+            "display_transfer": "sRGB",
+        },
         "negative_values": "retained through colour correction and included in min-max scale",
-        "gamma": "none",
-        "tone_map": "none",
+        "full_range_and_robust_preview_gamma": "none",
+        "full_range_and_robust_preview_tone_map": "none",
         "per_channel_normalization": "none",
     }
     (stack_dir / "colour_response_preview.json").write_text(

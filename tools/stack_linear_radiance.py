@@ -21,6 +21,11 @@ def main() -> None:
         "--clip-code", type=int, default=1023,
         help="RAW10 codes at or above this value become NaN (default: 1023)",
     )
+    parser.add_argument(
+        "--weighting", choices=("uniform", "exposure-squared"),
+        default="exposure-squared",
+        help="finite-sample weighting (default: exposure-squared)",
+    )
     args = parser.parse_args()
     if not 1 <= args.clip_code <= 1023:
         raise ValueError("clip code must be in [1, 1023]")
@@ -31,7 +36,8 @@ def main() -> None:
     output_dir = args.output_dir or args.bracket / "stacked_linear_radiance"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    finite_sum = np.zeros((1088, 1456), dtype=np.float64)
+    weighted_sum = np.zeros((1088, 1456), dtype=np.float64)
+    weight_sum = np.zeros((1088, 1456), dtype=np.float64)
     contributors = np.zeros((1088, 1456), dtype=np.uint16)
     records = []
 
@@ -59,7 +65,10 @@ def main() -> None:
                 masked = radiance.astype(np.float64)
                 masked[raw10 >= args.clip_code] = np.nan
                 finite = np.isfinite(masked)
-                finite_sum[finite] += masked[finite]
+                exposure_us = int(row["actual_us"])
+                weight = 1.0 if args.weighting == "uniform" else float(exposure_us) ** 2
+                weighted_sum[finite] += masked[finite] * weight
+                weight_sum[finite] += weight
                 contributors[finite] += 1
                 exposure_records.append({
                     "index": index,
@@ -76,7 +85,7 @@ def main() -> None:
     uncovered = contributors == 0
     if np.any(uncovered):
         raise RuntimeError(f"{int(np.count_nonzero(uncovered))} pixels have no finite exposure")
-    stacked = (finite_sum / contributors).astype("<f4")
+    stacked = (weighted_sum / weight_sum).astype("<f4")
     stack_path = output_dir / "radiance_bggr_nanmean.raw32f"
     stack_path.write_bytes(stacked.tobytes())
     tiff_path = output_dir / "radiance_bggr_nanmean_float32.tiff"
@@ -105,7 +114,8 @@ def main() -> None:
         "stack_sha256": hashlib.sha256(stack_path.read_bytes()).hexdigest(),
         "float32_tiff": tiff_path.name,
         "contributor_count_tiff": contributors_path.name,
-        "merge": "arithmetic mean of finite radiance samples",
+        "merge": "weighted mean of finite radiance samples",
+        "weighting": args.weighting,
         "nan_mask": f"native RAW10 code >= {args.clip_code}",
         "clip_code_raw10": args.clip_code,
         "nonlinear_output_processing": "none",

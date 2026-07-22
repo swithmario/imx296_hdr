@@ -111,8 +111,11 @@ python3 tools/stack_linear_radiance.py STILL_BRACKET_DIR
 ```
 
 Every native RAW10 value at code 1023 is replaced by `NaN` before merging. The
-output is the arithmetic mean of finite radiance samples only; clipped samples
-have exactly zero influence. The stack remains float32 BGGR counts/second and
+output is an exposure-squared weighted mean of finite radiance samples only;
+clipped samples have exactly zero influence. This favours cleaner long samples
+where they remain valid and lets short samples take over clipped highlights.
+Pass `--weighting uniform` when an unweighted finite mean is specifically
+required. The stack remains float32 BGGR counts/second and
 is written both as a self-describing float32 TIFF and as a headerless `.raw32f`
 computational array. A 16-bit TIFF contributor map records the finite sample
 count at every Bayer pixel.
@@ -143,7 +146,10 @@ python3 tools/render_colour_response.py STILL_BRACKET_DIR
 This creates both an exact full-range affine preview and a more useful shared
 0.1–99.9% linear-window preview. They are explicitly viewing derivatives; the
 underlying Bayer radiance master is not changed. Neither uses gamma, a tone
-curve, or per-channel normalization.
+curve, or per-channel normalization. It also creates a display-only tone-mapped
+TIFF using positive-value exposure scaling, Reinhard highlight compression,
+and the sRGB display transfer function; all tone-map parameters are recorded in
+`colour_response_preview.json`.
 
 ## Dark-frame calibration library
 

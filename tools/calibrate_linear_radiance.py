@@ -12,12 +12,17 @@ from pathlib import Path
 import numpy as np
 
 
-def virtual_dark(library: Path, points: list[dict], exposure_us: int) -> np.ndarray:
+def virtual_dark(
+    library: Path, points: list[dict], exposure_us: int, allow_nearest: bool = False
+) -> np.ndarray:
     lower = max((p for p in points if p["actual_exposure_us"] <= exposure_us),
                 key=lambda p: p["actual_exposure_us"], default=None)
     upper = min((p for p in points if p["actual_exposure_us"] >= exposure_us),
                 key=lambda p: p["actual_exposure_us"], default=None)
     if lower is None or upper is None:
+        if allow_nearest:
+            nearest = min(points, key=lambda p: abs(p["actual_exposure_us"] - exposure_us))
+            return np.fromfile(library / nearest["master"], dtype="<f4").reshape(1088, 1456)
         raise ValueError(f"exposure {exposure_us} us is outside dark calibration range")
     lo = np.fromfile(library / lower["master"], dtype="<f4").reshape(1088, 1456)
     if lower is upper:
@@ -32,6 +37,10 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("run_dir", type=Path)
     parser.add_argument("dark_library", type=Path)
+    parser.add_argument(
+        "--allow-nearest-dark", action="store_true",
+        help="use the nearest endpoint master outside the calibrated exposure range",
+    )
     args = parser.parse_args()
 
     manifest = json.loads((args.run_dir / "manifest.json").read_text())
@@ -60,7 +69,9 @@ def main() -> None:
             frame = raw.read(frame_size)
             image = (np.frombuffer(frame, dtype="<u2")
                      .reshape(height, stride // 2)[:, :width].astype(np.float32))
-            dark = virtual_dark(args.dark_library, points, exposure_us)
+            dark = virtual_dark(
+                args.dark_library, points, exposure_us, args.allow_nearest_dark
+            )
             # RAW16 stores RAW10 codes left-shifted by six. Convert both to
             # RAW10 counts, subtract in Bayer space, then divide by seconds.
             radiance = ((image - dark) / 64.0) / (exposure_us / 1_000_000.0)
@@ -109,6 +120,9 @@ def main() -> None:
         ],
         "nonlinear_processing": "none",
         "negative_values": "retained; no post-subtraction clamp",
+        "out_of_range_dark_policy": (
+            "nearest endpoint master" if args.allow_nearest_dark else "error"
+        ),
         "sources": source_records,
         "pairs": pair_records,
     }
