@@ -1,7 +1,7 @@
 diff --git a/src/libcamera/pipeline/rpi/common/pipeline_base.cpp b/src/libcamera/pipeline/rpi/common/pipeline_base.cpp
 --- a/src/libcamera/pipeline/rpi/common/pipeline_base.cpp
 +++ b/src/libcamera/pipeline/rpi/common/pipeline_base.cpp
-@@ -1251,7 +1251,32 @@
+@@ -1251,7 +1251,48 @@
  
  void CameraData::setDelayedControls(const ControlList &controls, uint32_t delayContext)
  {
@@ -31,6 +31,22 @@ diff --git a/src/libcamera/pipeline/rpi/common/pipeline_base.cpp b/src/libcamera
 +				<< " exposure lines " << exposureLines;
 +	}
 +
++	/*
++	 * Five-stop experimental video bracket selected from the measured useful
++	 * range: approximately 192 us, 799 us, 3999 us, 15999 us and 64992 us.
++	 */
++	if (utils::secure_getenv("LIBCAMERA_RPI_IMX296_HDR5") &&
++	    sensor_->model() == "imx296") {
++		constexpr std::array<int32_t, 5> exposureLines{ 12, 53, 269, 1079, 4386 };
++		/* Request contexts are buffer-scoped and can repeat out of phase. */
++		static uint64_t exposureSequence = 0;
++		int32_t exposure = exposureLines[exposureSequence++ % exposureLines.size()];
++
++		scheduledControls.set(V4L2_CID_EXPOSURE, exposure);
++		LOG(RPI, Debug) << "IMX296 HDR5 schedule: context " << delayContext
++				<< " exposure lines " << exposure;
++	}
++
 +	if (!delayedCtrls_->push(scheduledControls, delayContext))
  		LOG(RPI, Error) << "V4L2 DelayedControl set failed";
  }
@@ -38,7 +54,7 @@ diff --git a/src/libcamera/pipeline/rpi/common/pipeline_base.cpp b/src/libcamera
 diff --git a/src/libcamera/pipeline/rpi/pisp/pisp.cpp b/src/libcamera/pipeline/rpi/pisp/pisp.cpp
 --- a/src/libcamera/pipeline/rpi/pisp/pisp.cpp
 +++ b/src/libcamera/pipeline/rpi/pisp/pisp.cpp
-@@ -1211,7 +1211,18 @@
+@@ -1211,7 +1211,19 @@
  		 * so signal the output as unpacked 16-bits in these cases.
  		 */
  		if (bayer.packing == BayerFormat::Packing::CSI2 || bayer.bitDepth != 16) {
@@ -51,6 +67,7 @@ diff --git a/src/libcamera/pipeline/rpi/pisp/pisp.cpp b/src/libcamera/pipeline/r
 +			 */
 +			bool preserveRawCodes =
 +				(utils::secure_getenv("LIBCAMERA_RPI_IMX296_HDR_ALT") ||
++				 utils::secure_getenv("LIBCAMERA_RPI_IMX296_HDR5") ||
 +				 utils::secure_getenv("LIBCAMERA_RPI_IMX296_RAW16")) &&
 +				sensor_->model() == "imx296";
 +			bayer.packing = (bayer.packing == BayerFormat::Packing::CSI2 &&

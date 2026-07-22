@@ -55,6 +55,10 @@ def main() -> None:
     parser.add_argument("--discard", type=int, default=8)
     parser.add_argument("--short-us", type=int, default=93)
     parser.add_argument("--long-us", type=int, default=15_741)
+    parser.add_argument(
+        "--exposures-us", type=int, nargs="+",
+        help="cycle through these exposure times instead of short/long",
+    )
     parser.add_argument("--frame-us", type=int, default=16_667)
     parser.add_argument("--buffers", type=int, default=4)
     parser.add_argument("--output-dir", type=Path, default=Path("."))
@@ -115,7 +119,7 @@ def main() -> None:
             raise RuntimeError("camera allocated fewer buffers than requested")
 
         requests = []
-        exposures = (args.short_us, args.long_us)
+        exposures = tuple(args.exposures_us or (args.short_us, args.long_us))
         mapped_by_buffer = {}
         for index, buffer in enumerate(buffers[: args.buffers]):
             request = camera.create_request(index)
@@ -123,7 +127,7 @@ def main() -> None:
                 raise RuntimeError("request creation failed")
             if request.add_buffer(stream, buffer) not in (None, 0):
                 raise RuntimeError("request buffer attachment failed")
-            set_manual_controls(request, exposures[index % 2], args.frame_us)
+            set_manual_controls(request, exposures[index % len(exposures)], args.frame_us)
             requests.append(request)
             mfb = MappedPlane(buffer)
             mapped.append(mfb)
@@ -174,7 +178,7 @@ def main() -> None:
                                 "index": retained_index,
                                 "sensor_sequence": request.sequence,
                                 "cookie": request.cookie,
-                                "requested_us": exposures[request.cookie % 2],
+                                "requested_us": exposures[request.cookie % len(exposures)],
                                 "actual_us": metadata.get("ExposureTime"),
                                 "frame_us": metadata.get("FrameDuration"),
                                 "sensor_timestamp_ns": timestamp,
@@ -191,7 +195,7 @@ def main() -> None:
                         continue
 
                     request.reuse()
-                    requested = exposures[request.cookie % 2]
+                    requested = exposures[request.cookie % len(exposures)]
                     set_manual_controls(request, requested, args.frame_us)
                     if camera.queue_request(request) not in (None, 0):
                         raise RuntimeError("request requeue failed")
@@ -231,7 +235,10 @@ def main() -> None:
             "captured_frames": args.frames,
             "discarded_startup_frames": args.discard,
             "retained_frames": len(captured),
-            "hdr_pairs": len(captured) // 2,
+            "bracket_size": len(exposures),
+            "hdr_cycles": len(captured) // len(exposures),
+            "requested_exposures_us": list(exposures),
+            "hdr_pairs": len(captured) // 2 if len(exposures) == 2 else None,
             "requested_short_us": args.short_us,
             "requested_long_us": args.long_us,
             "requested_sensor_frame_us": args.frame_us,
