@@ -103,6 +103,16 @@ captures one retained RAW image per 1–2–5 exposure point from 1 ms through
 10 seconds. Each point has its own metadata and hash and can be passed to the
 same calibration tool independently.
 
+Stack calibrated stills into one linear HDR Bayer radiance mosaic with
+exposure-aware inverse-noise weighting and a smooth RAW10 saturation taper:
+
+```bash
+python3 tools/stack_linear_radiance.py STILL_BRACKET_DIR
+```
+
+The stack remains float32 BGGR counts/second. Diagnostic arrays record the
+number of contributing exposures and the longest accepted exposure per pixel.
+
 ## Dark-frame calibration library
 
 Dark signal depends on pixel, exposure, analogue gain, and sensor temperature.
