@@ -27,3 +27,7 @@ second when every five sequential measurements form one HDR frame.
 lines, verified as 88, 192, 399, 799, and 1,599 µs. At the native 16.667 ms
 sensor period, five sequential measurements yield approximately 12 merged
 frames per second.
+
+`LIBCAMERA_RPI_IMX296_HDR5_FAST_SNR=1` keeps the native sensor period but
+shifts the five settings upward to 12, 53, 134, 337, and 809 lines. The test
+reported actual exposures of 192, 799, 1,999, 5,006, and 11,999 µs.

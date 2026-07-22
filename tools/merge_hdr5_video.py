@@ -34,12 +34,19 @@ def main() -> None:
     requested = sorted(set(map(int, manifest["capture"]["requested_exposures_us"])))
     if len(requested) != bracket_size:
         raise RuntimeError(f"invalid requested bracket: {requested}")
+    actual_values = sorted(set(int(row["actual_us"]) for row in rows))
+    if len(actual_values) != bracket_size:
+        raise RuntimeError(f"capture has unexpected actual exposures: {actual_values}")
+    if any(abs(actual - nominal) > 32 for actual, nominal in zip(actual_values, requested)):
+        raise RuntimeError(
+            f"actual exposures {actual_values} do not match requests {requested}"
+        )
     selected_groups = []
     if args.resync:
         index = 0
         while index <= len(rows) - bracket_size:
             values = [int(row["actual_us"]) for row in rows[index:index + bracket_size]]
-            if values == requested:
+            if values == actual_values:
                 selected_groups.append(rows[index:index + bracket_size])
                 index += bracket_size
             else:
@@ -48,10 +55,10 @@ def main() -> None:
             selected_groups = selected_groups[:args.cycles]
         if not selected_groups:
             raise RuntimeError("no complete metadata-exact exposure cycles found")
-        exposure_cycle = requested
+        exposure_cycle = actual_values
     else:
         exposure_cycle = [int(rows[index]["actual_us"]) for index in range(bracket_size)]
-        if sorted(set(exposure_cycle)) != requested:
+        if sorted(set(exposure_cycle)) != actual_values:
             raise RuntimeError(f"invalid first bracket: {exposure_cycle}")
         for index, row in enumerate(rows):
             expected = exposure_cycle[index % bracket_size]
@@ -63,7 +70,7 @@ def main() -> None:
             rows[index:index + bracket_size]
             for index in range(0, len(rows), bracket_size)
         ]
-    exposures = requested
+    exposures = actual_values
     selected_rows = [row for group in selected_groups for row in group]
 
     stream = manifest["stream"]
