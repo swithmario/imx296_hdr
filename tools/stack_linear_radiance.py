@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+from PIL import Image, TiffImagePlugin
 
 
 def main() -> None:
@@ -76,6 +77,17 @@ def main() -> None:
     stacked = (numerator / denominator).astype("<f4")
     stack_path = output_dir / "radiance_bggr.raw32f"
     stack_path.write_bytes(stacked.tobytes())
+    tiff_path = output_dir / "radiance_bggr_float32.tiff"
+    tiff_info = TiffImagePlugin.ImageFileDirectory_v2()
+    tiff_info[270] = (
+        "IMX296 BGGR Bayer linear radiance; float32 RAW10 counts/second; "
+        "virtual-dark subtracted; no demosaic, gamma, tone map, clamp, CCM, "
+        "white balance, or display scaling"
+    )
+    tiff_info[305] = "imx296-hdr stack_linear_radiance.py"
+    Image.fromarray(stacked, mode="F").save(
+        tiff_path, format="TIFF", compression="tiff_deflate", tiffinfo=tiff_info
+    )
     contributors_path = output_dir / "contributor_count.raw8"
     contributors_path.write_bytes(contributors.tobytes())
     exposure_path = output_dir / "longest_accepted_exposure_s.raw32f"
@@ -88,6 +100,8 @@ def main() -> None:
         "format": "little-endian float32 linear radiance, RAW10 counts per second",
         "stack": stack_path.name,
         "stack_sha256": hashlib.sha256(stack_path.read_bytes()).hexdigest(),
+        "float32_tiff": tiff_path.name,
+        "float32_tiff_sha256": hashlib.sha256(tiff_path.read_bytes()).hexdigest(),
         "weighting": "inverse approximate radiance variance times squared saturation taper",
         "read_noise_counts_assumed": args.read_noise_counts,
         "saturation_taper_raw10": [args.taper_start, args.taper_end],

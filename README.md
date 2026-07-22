@@ -110,8 +110,10 @@ exposure-aware inverse-noise weighting and a smooth RAW10 saturation taper:
 python3 tools/stack_linear_radiance.py STILL_BRACKET_DIR
 ```
 
-The stack remains float32 BGGR counts/second. Diagnostic arrays record the
-number of contributing exposures and the longest accepted exposure per pixel.
+The stack remains float32 BGGR counts/second and is written both as a compact
+self-describing float32 TIFF and as a headerless `.raw32f` computational array.
+Diagnostic arrays record the number of contributing exposures and the longest
+accepted exposure per pixel.
 
 ## Dark-frame calibration library
 
