@@ -81,58 +81,65 @@ def main() -> None:
     points = sorted(args.bracket.glob("*us"), key=lambda p: int(p.name[:-2]))
     for point in points:
         manifest = json.loads((point / "manifest.json").read_text())
-        row = next(csv.DictReader((point / manifest["metadata_file"]).open()))
-        exposure_us = int(row["actual_us"])
+        rows = list(csv.DictReader((point / manifest["metadata_file"]).open()))
         stream = manifest["stream"]
-        raw = (np.fromfile(point / manifest["raw_file"]["name"], dtype="<u2")
-               .reshape(int(stream["height"]), int(stream["stride"]) // 2)
-               [:, :int(stream["width"])])
-        radiance = np.fromfile(
-            point / "linear_radiance/sources/frame_000.raw32f", dtype="<f4"
-        ).reshape(1088, 1456)
-        stem = f"{exposure_us:08d}us"
+        height, width = int(stream["height"]), int(stream["width"])
+        stride, frame_size = int(stream["stride"]), int(stream["frame_size"])
+        raw_file = (point / manifest["raw_file"]["name"]).open("rb")
+        for frame_index, row in enumerate(rows):
+            exposure_us = int(row["actual_us"])
+            raw_file.seek(int(row["byte_offset"]))
+            raw = (np.frombuffer(raw_file.read(frame_size), dtype="<u2")
+                   .reshape(height, stride // 2)[:, :width])
+            radiance = np.fromfile(
+                point / f"linear_radiance/sources/frame_{frame_index:03d}.raw32f",
+                dtype="<f4",
+            ).reshape(height, width)
+            stem = f"{exposure_us:08d}us_frame_{frame_index:03d}"
 
-        raw_path = raw_dir / f"{stem}_raw_bggr16.tiff"
-        Image.fromarray(np.ascontiguousarray(raw), mode="I;16").save(
-            raw_path, format="TIFF", compression="tiff_deflate",
-            tiffinfo=tiff_info(
-                f"IMX296 BGGR RAW; actual exposure {exposure_us} us; "
-                "RAW10 codes left-shifted by 6; exact measurement"
-            ),
-        )
-        physical_path = calibrated_dir / f"{stem}_radiance_bggr_float32.tiff"
-        Image.fromarray(radiance, mode="F").save(
-            physical_path, format="TIFF", compression="tiff_deflate",
-            tiffinfo=tiff_info(
-                f"IMX296 BGGR linear radiance; actual exposure {exposure_us} us; "
-                "float32 RAW10 counts/second; virtual-dark subtracted"
-            ),
-        )
-        normalized = np.clip(radiance / white, 0.0, 1.0)
-        view = np.rint(normalized * 65535.0).astype(np.uint16)
-        view_path = view_dir / f"{stem}_radiance_bggr_linear16.tiff"
-        Image.fromarray(view, mode="I;16").save(
-            view_path, format="TIFF", compression="tiff_deflate",
-            tiffinfo=tiff_info(
-                f"IMX296 BGGR linearly normalized radiance view; actual exposure {exposure_us} us; "
-                f"common white {white:.9g} counts/second; no gamma or tone curve"
-            ),
-        )
-        colour = demosaic_bggr(radiance)
-        colour_min = float(colour.min())
-        colour_max = float(colour.max())
-        colour_normalized = (colour - colour_min) / (colour_max - colour_min)
-        colour16 = np.rint(colour_normalized * 65535.0).astype(np.uint16)
-        colour16 = np.ascontiguousarray(np.rot90(colour16, 2))
-        colour_path = colour_preview_dir / f"{stem}_radiance_rgb_minmax16.tiff"
-        write_rgb48_tiff(colour_path, colour16)
-        records.append({"actual_exposure_us": exposure_us,
-                        "raw_tiff": str(raw_path.relative_to(args.bracket)),
-                        "physical_radiance_tiff": str(physical_path.relative_to(args.bracket)),
-                        "linear_view_tiff": str(view_path.relative_to(args.bracket)),
-                        "colour_minmax_preview_tiff": str(colour_path.relative_to(args.bracket)),
-                        "colour_preview_input_min": colour_min,
-                        "colour_preview_input_max": colour_max})
+            raw_path = raw_dir / f"{stem}_raw_bggr16.tiff"
+            Image.fromarray(np.ascontiguousarray(raw), mode="I;16").save(
+                raw_path, format="TIFF", compression="tiff_deflate",
+                tiffinfo=tiff_info(
+                    f"IMX296 BGGR RAW; actual exposure {exposure_us} us; "
+                    "RAW10 codes left-shifted by 6; exact measurement"
+                ),
+            )
+            physical_path = calibrated_dir / f"{stem}_radiance_bggr_float32.tiff"
+            Image.fromarray(radiance, mode="F").save(
+                physical_path, format="TIFF", compression="tiff_deflate",
+                tiffinfo=tiff_info(
+                    f"IMX296 BGGR linear radiance; actual exposure {exposure_us} us; "
+                    "float32 RAW10 counts/second; virtual-dark subtracted"
+                ),
+            )
+            normalized = np.clip(radiance / white, 0.0, 1.0)
+            view = np.rint(normalized * 65535.0).astype(np.uint16)
+            view_path = view_dir / f"{stem}_radiance_bggr_linear16.tiff"
+            Image.fromarray(view, mode="I;16").save(
+                view_path, format="TIFF", compression="tiff_deflate",
+                tiffinfo=tiff_info(
+                    f"IMX296 BGGR linearly normalized radiance view; actual exposure {exposure_us} us; "
+                    f"common white {white:.9g} counts/second; no gamma or tone curve"
+                ),
+            )
+            colour = demosaic_bggr(radiance)
+            colour_min = float(colour.min())
+            colour_max = float(colour.max())
+            colour_normalized = (colour - colour_min) / (colour_max - colour_min)
+            colour16 = np.rint(colour_normalized * 65535.0).astype(np.uint16)
+            colour16 = np.ascontiguousarray(np.rot90(colour16, 2))
+            colour_path = colour_preview_dir / f"{stem}_radiance_rgb_minmax16.tiff"
+            write_rgb48_tiff(colour_path, colour16)
+            records.append({"actual_exposure_us": exposure_us,
+                            "frame_index": frame_index,
+                            "raw_tiff": str(raw_path.relative_to(args.bracket)),
+                            "physical_radiance_tiff": str(physical_path.relative_to(args.bracket)),
+                            "linear_view_tiff": str(view_path.relative_to(args.bracket)),
+                            "colour_minmax_preview_tiff": str(colour_path.relative_to(args.bracket)),
+                            "colour_preview_input_min": colour_min,
+                            "colour_preview_input_max": colour_max})
+        raw_file.close()
 
     rgb = demosaic_bggr(stack)
     rgb_normalized = np.clip(rgb / white, 0.0, 1.0)

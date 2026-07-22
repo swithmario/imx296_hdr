@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stack independent calibrated Bayer stills into one linear HDR radiance mosaic."""
+"""NaN-mask clipped RAW samples and average linear Bayer radiance frames."""
 
 from __future__ import annotations
 
@@ -17,12 +17,13 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("bracket", type=Path)
     parser.add_argument("--output-dir", type=Path)
-    parser.add_argument("--read-noise-counts", type=float, default=0.5)
-    parser.add_argument("--taper-start", type=float, default=900.0)
-    parser.add_argument("--taper-end", type=float, default=1000.0)
+    parser.add_argument(
+        "--clip-code", type=int, default=1023,
+        help="RAW10 codes at or above this value become NaN (default: 1023)",
+    )
     args = parser.parse_args()
-    if not 0 <= args.taper_start < args.taper_end <= 1023:
-        raise ValueError("invalid saturation taper")
+    if not 1 <= args.clip_code <= 1023:
+        raise ValueError("clip code must be in [1, 1023]")
 
     points = sorted(args.bracket.glob("*us"), key=lambda p: int(p.name[:-2]))
     if len(points) < 2:
@@ -30,68 +31,70 @@ def main() -> None:
     output_dir = args.output_dir or args.bracket / "stacked_linear_radiance"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    numerator = np.zeros((1088, 1456), dtype=np.float64)
-    denominator = np.zeros((1088, 1456), dtype=np.float64)
-    contributors = np.zeros((1088, 1456), dtype=np.uint8)
-    longest_exposure = np.zeros((1088, 1456), dtype=np.float32)
+    finite_sum = np.zeros((1088, 1456), dtype=np.float64)
+    contributors = np.zeros((1088, 1456), dtype=np.uint16)
     records = []
 
     for point in points:
         manifest = json.loads((point / "manifest.json").read_text())
-        row = next(csv.DictReader((point / manifest["metadata_file"]).open()))
-        exposure_us = int(row["actual_us"])
-        exposure_s = exposure_us / 1_000_000.0
+        rows = list(csv.DictReader((point / manifest["metadata_file"]).open()))
         stream = manifest["stream"]
-        raw = (np.fromfile(point / manifest["raw_file"]["name"], dtype="<u2")
-               .reshape(int(stream["height"]), int(stream["stride"]) // 2)
-               [:, :int(stream["width"])].astype(np.float64) / 64.0)
-        radiance_path = point / "linear_radiance/sources/frame_000.raw32f"
-        radiance = np.fromfile(radiance_path, dtype="<f4").reshape(1088, 1456)
+        width, height = int(stream["width"]), int(stream["height"])
+        stride, frame_size = int(stream["stride"]), int(stream["frame_size"])
+        if (width, height) != (1456, 1088):
+            raise RuntimeError("only 1456x1088 captures are supported")
+        raw_path = point / manifest["raw_file"]["name"]
+        exposure_records = []
+        with raw_path.open("rb") as raw_file:
+            for index, row in enumerate(rows):
+                raw_file.seek(int(row["byte_offset"]))
+                raw16 = (np.frombuffer(raw_file.read(frame_size), dtype="<u2")
+                         .reshape(height, stride // 2)[:, :width])
+                raw10 = raw16 >> 6
+                radiance_path = point / f"linear_radiance/sources/frame_{index:03d}.raw32f"
+                radiance = np.fromfile(radiance_path, dtype="<f4").reshape(height, width)
 
-        # The Poisson term in sensor-count units is approximated by measured
-        # signal = radiance * time. Inverse radiance variance is therefore
-        # proportional to t^2 / (read_noise^2 + max(signal, 0)).
-        signal = radiance.astype(np.float64) * exposure_s
-        inverse_variance = exposure_s**2 / (
-            args.read_noise_counts**2 + np.maximum(signal, 0.0)
-        )
-        saturation_taper = np.clip(
-            (args.taper_end - raw) / (args.taper_end - args.taper_start), 0.0, 1.0
-        )
-        weight = inverse_variance * saturation_taper**2
-        valid = weight > 0
-        numerator[valid] += radiance[valid] * weight[valid]
-        denominator[valid] += weight[valid]
-        contributors[valid] += 1
-        longest_exposure[valid] = exposure_s
+                # Clipped measurements do not represent radiance. Express that
+                # explicitly as NaN, then add only finite samples to the mean.
+                masked = radiance.astype(np.float64)
+                masked[raw10 >= args.clip_code] = np.nan
+                finite = np.isfinite(masked)
+                finite_sum[finite] += masked[finite]
+                contributors[finite] += 1
+                exposure_records.append({
+                    "index": index,
+                    "actual_exposure_us": int(row["actual_us"]),
+                    "clipped_pixels": int(np.count_nonzero(~finite)),
+                    "finite_pixels": int(np.count_nonzero(finite)),
+                })
         records.append({
-            "actual_exposure_us": exposure_us,
-            "raw_saturated_pixels": int(np.count_nonzero(raw >= 1023)),
-            "accepted_pixels": int(np.count_nonzero(valid)),
+            "requested_exposure": point.name,
             "source": str(point.relative_to(args.bracket)),
+            "frames": exposure_records,
         })
 
-    uncovered = denominator == 0
+    uncovered = contributors == 0
     if np.any(uncovered):
-        raise RuntimeError(f"{int(np.count_nonzero(uncovered))} pixels have no valid exposure")
-    stacked = (numerator / denominator).astype("<f4")
-    stack_path = output_dir / "radiance_bggr.raw32f"
+        raise RuntimeError(f"{int(np.count_nonzero(uncovered))} pixels have no finite exposure")
+    stacked = (finite_sum / contributors).astype("<f4")
+    stack_path = output_dir / "radiance_bggr_nanmean.raw32f"
     stack_path.write_bytes(stacked.tobytes())
-    tiff_path = output_dir / "radiance_bggr_float32.tiff"
+    tiff_path = output_dir / "radiance_bggr_nanmean_float32.tiff"
     tiff_info = TiffImagePlugin.ImageFileDirectory_v2()
     tiff_info[270] = (
         "IMX296 BGGR Bayer linear radiance; float32 RAW10 counts/second; "
-        "virtual-dark subtracted; no demosaic, gamma, tone map, clamp, CCM, "
-        "white balance, or display scaling"
+        "virtual-dark subtracted; sensor-clipped samples replaced by NaN and "
+        "excluded from finite mean; negatives retained; no demosaic, gamma, "
+        "tone map, clamp, CCM, white balance, or display scaling"
     )
     tiff_info[305] = "imx296-hdr stack_linear_radiance.py"
     Image.fromarray(stacked, mode="F").save(
         tiff_path, format="TIFF", compression="tiff_deflate", tiffinfo=tiff_info
     )
-    contributors_path = output_dir / "contributor_count.raw8"
-    contributors_path.write_bytes(contributors.tobytes())
-    exposure_path = output_dir / "longest_accepted_exposure_s.raw32f"
-    exposure_path.write_bytes(longest_exposure.astype("<f4").tobytes())
+    contributors_path = output_dir / "contributor_count_uint16.tiff"
+    Image.fromarray(contributors).save(
+        contributors_path, format="TIFF", compression="tiff_deflate"
+    )
 
     output = {
         "width": 1456,
@@ -101,18 +104,14 @@ def main() -> None:
         "stack": stack_path.name,
         "stack_sha256": hashlib.sha256(stack_path.read_bytes()).hexdigest(),
         "float32_tiff": tiff_path.name,
-        "float32_tiff_sha256": hashlib.sha256(tiff_path.read_bytes()).hexdigest(),
-        "weighting": "inverse approximate radiance variance times squared saturation taper",
-        "read_noise_counts_assumed": args.read_noise_counts,
-        "saturation_taper_raw10": [args.taper_start, args.taper_end],
+        "contributor_count_tiff": contributors_path.name,
+        "merge": "arithmetic mean of finite radiance samples",
+        "nan_mask": f"native RAW10 code >= {args.clip_code}",
+        "clip_code_raw10": args.clip_code,
         "nonlinear_output_processing": "none",
         "negative_values": "retained",
-        "diagnostics": {
-            "contributor_count": contributors_path.name,
-            "longest_accepted_exposure_s": exposure_path.name,
-            "minimum_contributors": int(contributors.min()),
-            "maximum_contributors": int(contributors.max()),
-        },
+        "minimum_contributors": int(contributors.min()),
+        "maximum_contributors": int(contributors.max()),
         "sources": records,
     }
     (output_dir / "manifest.json").write_text(
@@ -121,8 +120,8 @@ def main() -> None:
     print(json.dumps({
         "stack": str(stack_path),
         "sha256": output["stack_sha256"],
-        "min_contributors": output["diagnostics"]["minimum_contributors"],
-        "max_contributors": output["diagnostics"]["maximum_contributors"],
+        "min_contributors": output["minimum_contributors"],
+        "max_contributors": output["maximum_contributors"],
     }, indent=2))
 
 

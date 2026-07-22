@@ -103,17 +103,19 @@ captures one retained RAW image per 1–2–5 exposure point from 1 ms through
 10 seconds. Each point has its own metadata and hash and can be passed to the
 same calibration tool independently.
 
-Stack calibrated stills into one linear HDR Bayer radiance mosaic with
-exposure-aware inverse-noise weighting and a smooth RAW10 saturation taper:
+Stack calibrated stills into one linear HDR Bayer radiance mosaic with an
+explicit clipped-sample mask:
 
 ```bash
 python3 tools/stack_linear_radiance.py STILL_BRACKET_DIR
 ```
 
-The stack remains float32 BGGR counts/second and is written both as a compact
-self-describing float32 TIFF and as a headerless `.raw32f` computational array.
-Diagnostic arrays record the number of contributing exposures and the longest
-accepted exposure per pixel.
+Every native RAW10 value at code 1023 is replaced by `NaN` before merging. The
+output is the arithmetic mean of finite radiance samples only; clipped samples
+have exactly zero influence. The stack remains float32 BGGR counts/second and
+is written both as a self-describing float32 TIFF and as a headerless `.raw32f`
+computational array. A 16-bit TIFF contributor map records the finite sample
+count at every Bayer pixel.
 
 Export every bracket RAW and calibrated still to TIFF, plus a merged 48-bit
 linear RGB TIFF, with:
