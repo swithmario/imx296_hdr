@@ -26,6 +26,9 @@ def main() -> None:
     merged_dir = args.run_dir / "merged_hdr5"
     merged = json.loads((merged_dir / "manifest.json").read_text())
     rows = list(csv.DictReader((args.run_dir / capture["metadata_file"]).open()))
+    if "selected_source_indices" in merged:
+        rows_by_index = {int(row["index"]): row for row in rows}
+        rows = [rows_by_index[index] for index in merged["selected_source_indices"]]
     exposure_cycle = merged["recorded_exposure_cycle_us"]
     exposures = merged["actual_exposures_us"]
     cycles = int(merged["output_frames"])

@@ -22,3 +22,8 @@ scheduler using 12, 53, 269, 1079, and 4386 sensor lines. The verified metadata
 exposures are 192, 799, 3,999, 15,999, and 64,992 µs. It requires a sensor frame
 duration of at least 67 ms and therefore yields about 2.985 merged frames per
 second when every five sequential measurements form one HDR frame.
+
+`LIBCAMERA_RPI_IMX296_HDR5_FAST=1` selects 5, 12, 26, 53, and 107 sensor
+lines, verified as 88, 192, 399, 799, and 1,599 µs. At the native 16.667 ms
+sensor period, five sequential measurements yield approximately 12 merged
+frames per second.

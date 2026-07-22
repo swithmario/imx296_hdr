@@ -22,6 +22,8 @@ def main() -> None:
     parser.add_argument("run_dir", type=Path)
     parser.add_argument("dark_library", type=Path)
     parser.add_argument("--clip-code", type=int, default=1000)
+    parser.add_argument("--resync", action="store_true")
+    parser.add_argument("--cycles", type=int)
     args = parser.parse_args()
 
     manifest = json.loads((args.run_dir / "manifest.json").read_text())
@@ -29,16 +31,40 @@ def main() -> None:
     bracket_size = int(manifest["capture"].get("bracket_size", 0))
     if bracket_size != 5 or len(rows) % bracket_size:
         raise RuntimeError("capture is not a whole five-exposure sequence")
-    exposure_cycle = [int(rows[index]["actual_us"]) for index in range(bracket_size)]
-    exposures = sorted(set(exposure_cycle))
-    if len(exposures) != bracket_size:
-        raise RuntimeError(f"invalid first bracket: {exposures}")
-    for index, row in enumerate(rows):
-        expected = exposure_cycle[index % bracket_size]
-        if int(row["actual_us"]) != expected:
-            raise RuntimeError(
-                f"frame {index}: exposure {row['actual_us']}, expected {expected}"
-            )
+    requested = sorted(set(map(int, manifest["capture"]["requested_exposures_us"])))
+    if len(requested) != bracket_size:
+        raise RuntimeError(f"invalid requested bracket: {requested}")
+    selected_groups = []
+    if args.resync:
+        index = 0
+        while index <= len(rows) - bracket_size:
+            values = [int(row["actual_us"]) for row in rows[index:index + bracket_size]]
+            if values == requested:
+                selected_groups.append(rows[index:index + bracket_size])
+                index += bracket_size
+            else:
+                index += 1
+        if args.cycles is not None:
+            selected_groups = selected_groups[:args.cycles]
+        if not selected_groups:
+            raise RuntimeError("no complete metadata-exact exposure cycles found")
+        exposure_cycle = requested
+    else:
+        exposure_cycle = [int(rows[index]["actual_us"]) for index in range(bracket_size)]
+        if sorted(set(exposure_cycle)) != requested:
+            raise RuntimeError(f"invalid first bracket: {exposure_cycle}")
+        for index, row in enumerate(rows):
+            expected = exposure_cycle[index % bracket_size]
+            if int(row["actual_us"]) != expected:
+                raise RuntimeError(
+                    f"frame {index}: exposure {row['actual_us']}, expected {expected}"
+                )
+        selected_groups = [
+            rows[index:index + bracket_size]
+            for index in range(0, len(rows), bracket_size)
+        ]
+    exposures = requested
+    selected_rows = [row for group in selected_groups for row in group]
 
     stream = manifest["stream"]
     width, height = int(stream["width"]), int(stream["height"])
@@ -56,13 +82,13 @@ def main() -> None:
     }
 
     frame_intervals = [
-        (int(rows[index]["sensor_timestamp_ns"]) -
-         int(rows[index - 1]["sensor_timestamp_ns"])) / 1e9
-        for index in range(1, len(rows))
+        (int(selected_rows[index]["sensor_timestamp_ns"]) -
+         int(selected_rows[index - 1]["sensor_timestamp_ns"])) / 1e9
+        for index in range(1, len(selected_rows))
     ]
     sensor_interval = float(np.median(frame_intervals))
     output_fps = 1.0 / (sensor_interval * bracket_size)
-    cycles = len(rows) // bracket_size
+    cycles = len(selected_groups)
     output_dir = args.run_dir / "merged_hdr5"
     output_dir.mkdir(exist_ok=True)
     radiance_path = output_dir / "linear_radiance_bggr_60frames.raw32f"
@@ -103,7 +129,7 @@ def main() -> None:
     radiance_digest = hashlib.sha256()
     records = []
     with raw_path.open("rb") as raw_file:
-        first, _, _ = merge_cycle(raw_file, rows[:bracket_size])
+        first, _, _ = merge_cycle(raw_file, selected_groups[0])
         corrected = (demosaic_bggr(first) * WHITE_BALANCE) @ CCM.T
         positive = corrected[corrected > 0]
         white = max(float(np.percentile(positive, 99.5)), 1e-6)
@@ -120,9 +146,8 @@ def main() -> None:
         with radiance_path.open("wb") as radiance_file:
             try:
                 for cycle in range(cycles):
-                    start = cycle * bracket_size
                     mosaic, contributors, clipped = merge_cycle(
-                        raw_file, rows[start:start + bracket_size]
+                        raw_file, selected_groups[cycle]
                     )
                     payload = mosaic.tobytes()
                     radiance_file.write(payload)
@@ -148,6 +173,9 @@ def main() -> None:
         "source_raw": str(raw_path.relative_to(args.run_dir)),
         "source_sha256": manifest["raw_file"]["sha256"],
         "source_frames": len(rows),
+        "selected_source_frames": len(selected_rows),
+        "discarded_source_frames": len(rows) - len(selected_rows),
+        "selected_source_indices": [int(row["index"]) for row in selected_rows],
         "actual_exposures_us": exposures,
         "recorded_exposure_cycle_us": exposure_cycle,
         "verified_sequence": True,
