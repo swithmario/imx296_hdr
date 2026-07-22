@@ -115,6 +115,17 @@ self-describing float32 TIFF and as a headerless `.raw32f` computational array.
 Diagnostic arrays record the number of contributing exposures and the longest
 accepted exposure per pixel.
 
+Export every bracket RAW and calibrated still to TIFF, plus a merged 48-bit
+linear RGB TIFF, with:
+
+```bash
+python3 tools/export_still_bracket_tiffs.py STILL_BRACKET_DIR
+```
+
+The exporter also creates commonly scaled 16-bit linear Bayer viewing copies.
+Those copies use one global multiplicative white scale only—no gamma or tone
+curve—while the float32 physical-units TIFFs remain unchanged.
+
 ## Dark-frame calibration library
 
 Dark signal depends on pixel, exposure, analogue gain, and sensor temperature.
