@@ -126,6 +126,11 @@ The exporter also creates commonly scaled 16-bit linear Bayer viewing copies.
 Those copies use one global multiplicative white scale only—no gamma or tone
 curve—while the float32 physical-units TIFFs remain unchanged.
 
+It additionally writes demosaiced 48-bit colour previews for every calibrated
+still and the merged stack. Preview mapping includes negative radiance and is
+strictly affine: `(value - global_min) / (global_max - global_min)` across all
+three channels. It performs no per-channel normalization, gamma, or tone curve.
+
 ## Dark-frame calibration library
 
 Dark signal depends on pixel, exposure, analogue gain, and sensor temperature.

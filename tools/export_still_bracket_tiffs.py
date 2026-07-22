@@ -44,6 +44,17 @@ def demosaic_bggr(mosaic: np.ndarray) -> np.ndarray:
     return np.stack((r, g, b), axis=-1)
 
 
+def write_rgb48_tiff(path: Path, rgb16: np.ndarray) -> None:
+    command = [
+        "ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo",
+        "-pixel_format", "rgb48le", "-video_size", "1456x1088", "-i", "-",
+        "-frames:v", "1", "-compression_algo", "deflate", str(path),
+    ]
+    encoded = subprocess.run(command, input=rgb16.astype("<u2").tobytes(), check=False)
+    if encoded.returncode:
+        raise RuntimeError(f"ffmpeg failed to write 48-bit RGB TIFF: {path}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("bracket", type=Path)
@@ -60,9 +71,11 @@ def main() -> None:
     raw_dir = args.bracket / "raw_tiff"
     calibrated_dir = args.bracket / "calibrated_radiance_tiff"
     view_dir = args.bracket / "calibrated_linear_view_tiff"
+    colour_preview_dir = args.bracket / "colour_minmax_preview_tiff"
     raw_dir.mkdir(exist_ok=True)
     calibrated_dir.mkdir(exist_ok=True)
     view_dir.mkdir(exist_ok=True)
+    colour_preview_dir.mkdir(exist_ok=True)
     records = []
 
     points = sorted(args.bracket.glob("*us"), key=lambda p: int(p.name[:-2]))
@@ -105,10 +118,21 @@ def main() -> None:
                 f"common white {white:.9g} counts/second; no gamma or tone curve"
             ),
         )
+        colour = demosaic_bggr(radiance)
+        colour_min = float(colour.min())
+        colour_max = float(colour.max())
+        colour_normalized = (colour - colour_min) / (colour_max - colour_min)
+        colour16 = np.rint(colour_normalized * 65535.0).astype(np.uint16)
+        colour16 = np.ascontiguousarray(np.rot90(colour16, 2))
+        colour_path = colour_preview_dir / f"{stem}_radiance_rgb_minmax16.tiff"
+        write_rgb48_tiff(colour_path, colour16)
         records.append({"actual_exposure_us": exposure_us,
                         "raw_tiff": str(raw_path.relative_to(args.bracket)),
                         "physical_radiance_tiff": str(physical_path.relative_to(args.bracket)),
-                        "linear_view_tiff": str(view_path.relative_to(args.bracket))})
+                        "linear_view_tiff": str(view_path.relative_to(args.bracket)),
+                        "colour_minmax_preview_tiff": str(colour_path.relative_to(args.bracket)),
+                        "colour_preview_input_min": colour_min,
+                        "colour_preview_input_max": colour_max})
 
     rgb = demosaic_bggr(stack)
     rgb_normalized = np.clip(rgb / white, 0.0, 1.0)
@@ -116,23 +140,29 @@ def main() -> None:
     # Registered camera orientation is 180 degrees.
     rgb16 = np.ascontiguousarray(np.rot90(rgb16, 2))
     merged_path = stack_dir / "merged_linear_rgb16.tiff"
-    command = [
-        "ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo",
-        "-pixel_format", "rgb48le", "-video_size", "1456x1088", "-i", "-",
-        "-frames:v", "1", "-compression_algo", "deflate", str(merged_path),
-    ]
-    encoded = subprocess.run(command, input=rgb16.astype("<u2").tobytes(), check=False)
-    if encoded.returncode:
-        raise RuntimeError("ffmpeg failed to write 48-bit RGB TIFF")
+    write_rgb48_tiff(merged_path, rgb16)
+    merged_min = float(rgb.min())
+    merged_max = float(rgb.max())
+    merged_minmax = (rgb - merged_min) / (merged_max - merged_min)
+    merged_minmax16 = np.rint(merged_minmax * 65535.0).astype(np.uint16)
+    merged_minmax16 = np.ascontiguousarray(np.rot90(merged_minmax16, 2))
+    merged_minmax_path = stack_dir / "merged_radiance_rgb_minmax16.tiff"
+    write_rgb48_tiff(merged_minmax_path, merged_minmax16)
     output = {"global_linear_white_counts_per_second": white,
               "white_percentile": args.white_percentile,
               "merged_linear_rgb16": str(merged_path.relative_to(args.bracket)),
+              "merged_minmax_rgb16": str(merged_minmax_path.relative_to(args.bracket)),
+              "merged_minmax_input_min": merged_min,
+              "merged_minmax_input_max": merged_max,
               "stills": records}
     (args.bracket / "tiff_exports.json").write_text(
         json.dumps(output, indent=2) + "\n", encoding="utf-8"
     )
     print(json.dumps({"raw_tiffs": len(records), "calibrated_tiffs": len(records),
-                      "linear_view_tiffs": len(records), "merged": str(merged_path),
+                      "linear_view_tiffs": len(records),
+                      "colour_minmax_previews": len(records),
+                      "merged": str(merged_path),
+                      "merged_minmax": str(merged_minmax_path),
                       "white": white}, indent=2))
 
 
