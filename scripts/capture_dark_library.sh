@@ -9,6 +9,13 @@ fi
 recorder=$1
 output_root=$2
 shift 2
+retained_frames=${RPICAM_RETAINED_FRAMES:-10}
+discard_frames=${RPICAM_DISCARD_FRAMES:-8}
+total_frames=$((retained_frames + discard_frames))
+if (( retained_frames < 1 || discard_frames < 0 )); then
+    echo "frame counts must be non-negative, with at least one retained frame" >&2
+    exit 2
+fi
 if (( $# )); then
     exposures_us=("$@")
 else
@@ -24,9 +31,9 @@ for exposure_us in "${exposures_us[@]}"; do
         frame_us=16667
     fi
 
-    echo "Capturing darks at requested ${exposure_us} us"
+    echo "Capturing ${retained_frames} frames at requested ${exposure_us} us"
     python3 "$recorder" \
-        --frames 18 --discard 8 \
+        --frames "$total_frames" --discard "$discard_frames" \
         --short-us "$exposure_us" --long-us "$exposure_us" \
         --frame-us "$frame_us" --buffers 4 --output-dir "$point_dir" &
     capture_pid=$!
@@ -34,7 +41,7 @@ for exposure_us in "${exposures_us[@]}"; do
     # The current libcamera Python singleton can leave a manager thread alive
     # after the recorder has flushed its final manifest. The manifest is the
     # last write, so its appearance is a safe completion signal.
-    timeout_s=$((30 + (18 * frame_us + 999999) / 1000000))
+    timeout_s=$((30 + (total_frames * frame_us + 999999) / 1000000))
     if (( timeout_s < 60 )); then
         timeout_s=60
     fi

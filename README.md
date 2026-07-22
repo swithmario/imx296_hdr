@@ -178,8 +178,11 @@ Long dark exposures require a sensor frame duration longer than the exposure;
 they cannot be collected in the fixed 60 fps HDR stream. Calibration capture
 therefore runs as a separate still/slow-sequence mode.
 
-Capture the full grid on the Pi with `scripts/capture_dark_library.sh`. After
-mirroring the run, build float32 mean masters and synthesize a virtual dark:
+Capture the full grid on the Pi with `scripts/capture_dark_library.sh`. Set
+`RPICAM_RETAINED_FRAMES` when more than the default ten retained frames per
+exposure are required. `RPICAM_DISCARD_FRAMES` controls the default eight
+startup frames discarded before each retained set. After mirroring the run,
+build float32 mean masters and synthesize a virtual dark:
 
 ```bash
 python3 tools/build_dark_library.py DARK_RUN_DIR
