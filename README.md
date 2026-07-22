@@ -149,7 +149,11 @@ underlying Bayer radiance master is not changed. Neither uses gamma, a tone
 curve, or per-channel normalization. It also creates a display-only tone-mapped
 TIFF using positive-value exposure scaling, Reinhard highlight compression,
 and the sRGB display transfer function; all tone-map parameters are recorded in
-`colour_response_preview.json`.
+`colour_response_preview.json`. Reinhard is applied to luminance once, not to
+the three channels independently. Chroma remains a Cartesian direction from
+the neutral axis and is contracted only enough to intersect the valid
+constant-luminance section of the display RGB cube. This removes highlight
+colour coordinate singularities without changing the scene-radiance geometry.
 
 ## Dark-frame calibration library
 

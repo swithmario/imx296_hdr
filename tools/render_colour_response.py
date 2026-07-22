@@ -22,6 +22,49 @@ CCM = np.array(
     dtype=np.float32,
 )
 
+LUMA = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+
+
+def coordinate_safe_tonemap(rgb: np.ndarray, white: float) -> np.ndarray:
+    """Tone-map luminance and preserve chroma direction inside the RGB cube.
+
+    Hue is not represented as an angle, so the zero-chroma coordinate
+    singularity never appears. Relative Cartesian chroma is regularized at
+    zero luminance, then contracted only as much as required to intersect the
+    valid constant-luminance section of the display RGB cube.
+    """
+    luminance = np.maximum(rgb @ LUMA, 0.0)
+    relative_chroma = (rgb - luminance[..., None]) / np.maximum(
+        luminance[..., None], white * 1e-8
+    )
+    exposed = luminance * (4.0 / white)
+    display_luminance = exposed / (1.0 + exposed)
+    delta = display_luminance[..., None] * relative_chroma
+
+    # Find the largest step from the neutral axis along the same chroma vector
+    # that keeps every channel inside [0, 1]. This preserves hue direction and
+    # automatically tends to neutral at the highlight vertex.
+    positive_limit = np.where(
+        delta > 0.0,
+        (1.0 - display_luminance[..., None]) / np.maximum(delta, 1e-20),
+        np.inf,
+    )
+    negative_limit = np.where(
+        delta < 0.0,
+        display_luminance[..., None] / np.maximum(-delta, 1e-20),
+        np.inf,
+    )
+    chroma_scale = np.minimum(
+        1.0, np.minimum(positive_limit, negative_limit).min(axis=-1)
+    )
+    display_linear = display_luminance[..., None] + delta * chroma_scale[..., None]
+    display_linear = np.clip(display_linear, 0.0, 1.0)
+    return np.where(
+        display_linear <= 0.0031308,
+        display_linear * 12.92,
+        1.055 * np.power(display_linear, 1.0 / 2.4) - 0.055,
+    )
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -58,13 +101,7 @@ def main() -> None:
 
     positive = corrected[corrected > 0]
     white = max(float(np.percentile(positive, 99.5)), 1e-6)
-    exposed = np.maximum(corrected, 0.0) * (4.0 / white)
-    reinhard = exposed / (1.0 + exposed)
-    srgb = np.where(
-        reinhard <= 0.0031308,
-        reinhard * 12.92,
-        1.055 * np.power(reinhard, 1.0 / 2.4) - 0.055,
-    )
+    srgb = coordinate_safe_tonemap(corrected, white)
     tone_view = np.rint(np.clip(srgb, 0.0, 1.0) * 65535.0).astype(np.uint16)
     tone_view = np.ascontiguousarray(np.rot90(tone_view, 2))
     tone_output = stack_dir / "merged_radiance_rgb_colour_response_tonemapped16.tiff"
@@ -91,7 +128,12 @@ def main() -> None:
         "tonemap": {
             "exposure_multiplier_relative_to_positive_99_5_percentile": 4.0,
             "white_radiance": white,
-            "operator": "Reinhard x/(1+x)",
+            "operator": "Reinhard x/(1+x) on luminance only",
+            "chroma_coordinates": "regularized Cartesian offset from neutral axis",
+            "gamut_mapping": (
+                "radial intersection along unchanged chroma direction with the "
+                "constant-luminance section of the linear RGB cube"
+            ),
             "display_transfer": "sRGB",
         },
         "negative_values": "retained through colour correction and included in min-max scale",
