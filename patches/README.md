@@ -8,8 +8,11 @@ The patch is deliberately gated by `LIBCAMERA_RPI_IMX296_HDR_ALT` and the
 sensor model string `imx296`. Without both conditions, normal behaviour is
 unchanged.
 
+For fixed-exposure calibration frames, `LIBCAMERA_RPI_IMX296_RAW16=1` enables
+only the lossless unpacked RAW transport. It does not override the requested
+exposure or alternate sensor controls.
+
 The current exposure-line constants are 66 and 1000. With the IMX296 helper's
 timing model these produce metadata exposures of about 992 µs and 14,829 µs.
 Requested microseconds remain in the capture manifest, while actual metadata
 values are authoritative.
-

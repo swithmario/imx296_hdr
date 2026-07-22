@@ -38,7 +38,7 @@ diff --git a/src/libcamera/pipeline/rpi/common/pipeline_base.cpp b/src/libcamera
 diff --git a/src/libcamera/pipeline/rpi/pisp/pisp.cpp b/src/libcamera/pipeline/rpi/pisp/pisp.cpp
 --- a/src/libcamera/pipeline/rpi/pisp/pisp.cpp
 +++ b/src/libcamera/pipeline/rpi/pisp/pisp.cpp
-@@ -1211,7 +1211,17 @@
+@@ -1211,7 +1211,18 @@
  		 * so signal the output as unpacked 16-bits in these cases.
  		 */
  		if (bayer.packing == BayerFormat::Packing::CSI2 || bayer.bitDepth != 16) {
@@ -50,7 +50,8 @@ diff --git a/src/libcamera/pipeline/rpi/pisp/pisp.cpp b/src/libcamera/pipeline/r
 +			 * when the same opt-in scheduling hook is enabled.
 +			 */
 +			bool preserveRawCodes =
-+				utils::secure_getenv("LIBCAMERA_RPI_IMX296_HDR_ALT") &&
++				(utils::secure_getenv("LIBCAMERA_RPI_IMX296_HDR_ALT") ||
++				 utils::secure_getenv("LIBCAMERA_RPI_IMX296_RAW16")) &&
 +				sensor_->model() == "imx296";
 +			bayer.packing = (bayer.packing == BayerFormat::Packing::CSI2 &&
 +					 !preserveRawCodes)

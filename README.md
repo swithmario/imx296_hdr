@@ -97,6 +97,17 @@ Long dark exposures require a sensor frame duration longer than the exposure;
 they cannot be collected in the fixed 60 fps HDR stream. Calibration capture
 therefore runs as a separate still/slow-sequence mode.
 
+Capture the full grid on the Pi with `scripts/capture_dark_library.sh`. After
+mirroring the run, build float32 mean masters and synthesize a virtual dark:
+
+```bash
+python3 tools/build_dark_library.py DARK_RUN_DIR
+python3 tools/synthesize_dark.py DARK_RUN_DIR 55000 virtual_55000us.raw32f
+```
+
+Interpolation uses actual metadata exposure times rather than nominal folder
+names and refuses extrapolation beyond the calibrated range.
+
 ## Hardware and safety
 
 Verified target: Raspberry Pi 5, IMX296, 1456×1088 RAW10. No external trigger,
