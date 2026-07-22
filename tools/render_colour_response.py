@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from export_still_bracket_tiffs import demosaic_bggr, write_rgb48_tiff
+from export_still_bracket_tiffs import demosaic_bggr, percentile_minmax, write_rgb48_tiff
 
 
 WHITE_BALANCE = np.array([2.428159, 1.0, 2.205721], dtype=np.float32)
@@ -80,10 +80,8 @@ def main() -> None:
     corrected = (sensor_rgb * WHITE_BALANCE) @ CCM.T
 
     # Preserve negative calibrated/matrix values in the affine preview mapping.
-    lower, upper = float(corrected.min()), float(corrected.max())
-    if not np.isfinite(lower) or not np.isfinite(upper) or upper <= lower:
-        raise RuntimeError("invalid corrected colour range")
-    view = np.rint((corrected - lower) / (upper - lower) * 65535.0).astype(np.uint16)
+    normalized, lower, upper = percentile_minmax(corrected, tail_percent=0.01)
+    view = np.rint(normalized * 65535.0).astype(np.uint16)
     view = np.ascontiguousarray(np.rot90(view, 2))
     output = stack_dir / "merged_radiance_rgb_colour_response_minmax16.tiff"
     write_rgb48_tiff(output, view)
@@ -116,13 +114,14 @@ def main() -> None:
             "bilinear BGGR demosaic in linear radiance",
             "multiply linear RGB by white-balance gains",
             "multiply by 3x3 colour correction matrix",
-            "one affine min-max mapping across all RGB channels",
+            "one shared 0.01st-99.99th percentile affine mapping across all RGB channels",
             "rotate 180 degrees",
         ],
         "white_balance_rgb": WHITE_BALANCE.tolist(),
         "colour_correction_matrix": CCM.tolist(),
         "corrected_input_min": lower,
         "corrected_input_max": upper,
+        "minmax_discarded_tail_percent_each": 0.01,
         "robust_shared_percentiles": [0.1, 99.9],
         "robust_shared_window": [robust_lower, robust_upper],
         "tonemap": {
@@ -136,7 +135,10 @@ def main() -> None:
             ),
             "display_transfer": "sRGB",
         },
-        "negative_values": "retained through colour correction and included in min-max scale",
+        "negative_values": (
+            "retained through colour correction; only the lowest 0.01% are "
+            "clipped in the min-max viewing derivative"
+        ),
         "full_range_and_robust_preview_gamma": "none",
         "full_range_and_robust_preview_tone_map": "none",
         "per_channel_normalization": "none",

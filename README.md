@@ -132,9 +132,11 @@ Those copies use one global multiplicative white scale only—no gamma or tone
 curve—while the float32 physical-units TIFFs remain unchanged.
 
 It additionally writes demosaiced 48-bit colour previews for every calibrated
-still and the merged stack. Preview mapping includes negative radiance and is
-strictly affine: `(value - global_min) / (global_max - global_min)` across all
-three channels. It performs no per-channel normalization, gamma, or tone curve.
+still and the merged stack. Preview mapping uses one shared RGB interval from
+the 0.01st to 99.99th percentile, discarding the bottom and top 0.01% so hot
+pixels cannot consume the display range. Values inside that interval are mapped
+strictly affinely across all three channels. It performs no per-channel
+normalization, gamma, or tone curve.
 
 Apply the project's measured IMX296 RGB gains and 3x3 colour-response matrix to
 an existing NaN-masked stack with:

@@ -55,6 +55,17 @@ def write_rgb48_tiff(path: Path, rgb16: np.ndarray) -> None:
         raise RuntimeError(f"ffmpeg failed to write 48-bit RGB TIFF: {path}")
 
 
+def percentile_minmax(rgb: np.ndarray, tail_percent: float = 0.01):
+    """Linearly map RGB using shared percentiles, ignoring extreme hot pixels."""
+    lower, upper = map(
+        float, np.percentile(rgb, [tail_percent, 100.0 - tail_percent])
+    )
+    if not np.isfinite(lower) or not np.isfinite(upper) or upper <= lower:
+        raise RuntimeError("invalid percentile min-max interval")
+    normalized = np.clip((rgb - lower) / (upper - lower), 0.0, 1.0)
+    return normalized, lower, upper
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("bracket", type=Path)
@@ -124,9 +135,7 @@ def main() -> None:
                 ),
             )
             colour = demosaic_bggr(radiance)
-            colour_min = float(colour.min())
-            colour_max = float(colour.max())
-            colour_normalized = (colour - colour_min) / (colour_max - colour_min)
+            colour_normalized, colour_min, colour_max = percentile_minmax(colour)
             colour16 = np.rint(colour_normalized * 65535.0).astype(np.uint16)
             colour16 = np.ascontiguousarray(np.rot90(colour16, 2))
             colour_path = colour_preview_dir / f"{stem}_radiance_rgb_minmax16.tiff"
@@ -148,9 +157,7 @@ def main() -> None:
     rgb16 = np.ascontiguousarray(np.rot90(rgb16, 2))
     merged_path = stack_dir / "merged_linear_rgb16.tiff"
     write_rgb48_tiff(merged_path, rgb16)
-    merged_min = float(rgb.min())
-    merged_max = float(rgb.max())
-    merged_minmax = (rgb - merged_min) / (merged_max - merged_min)
+    merged_minmax, merged_min, merged_max = percentile_minmax(rgb)
     merged_minmax16 = np.rint(merged_minmax * 65535.0).astype(np.uint16)
     merged_minmax16 = np.ascontiguousarray(np.rot90(merged_minmax16, 2))
     merged_minmax_path = stack_dir / "merged_radiance_rgb_minmax16.tiff"
@@ -161,6 +168,7 @@ def main() -> None:
               "merged_minmax_rgb16": str(merged_minmax_path.relative_to(args.bracket)),
               "merged_minmax_input_min": merged_min,
               "merged_minmax_input_max": merged_max,
+              "minmax_discarded_tail_percent_each": 0.01,
               "stills": records}
     (args.bracket / "tiff_exports.json").write_text(
         json.dumps(output, indent=2) + "\n", encoding="utf-8"
