@@ -23,7 +23,8 @@ class ExposureTests(unittest.TestCase):
         self.assertEqual(plan.integration_total_us, 37731)
         self.assertEqual(plan.angle_total_deg, 326)
         self.assertEqual(plan.raw_frames_per_reference_second, 120)
-        self.assertAlmostEqual(plan.exposure_span_stops, 7.49185, places=5)
+        # Span is calculated from the whole-microsecond values above.
+        self.assertAlmostEqual(plan.exposure_span_stops, 7.48860, places=5)
 
     def test_angles_must_increase(self) -> None:
         with self.assertRaisesRegex(ValueError, "strictly increasing"):
@@ -40,4 +41,3 @@ class ExposureTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
