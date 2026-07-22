@@ -1,0 +1,24 @@
+[project]
+name = "imx296-radiance-video"
+module_name = "Arducam 261 global-shutter module"
+expected_linux_sensor = "imx296"
+reference_fps = 24
+
+[bracket]
+shutter_angles_deg = [1, 10, 45, 90, 180]
+analogue_gain = 1.0
+
+[capture]
+require_raw_bayer = true
+require_actual_exposure_metadata = true
+require_sensor_timestamp = true
+require_sequence_number = true
+discard_transition_frames = true
+
+[calibration]
+black_level = "measure"
+dark_frames = "measure-per-exposure-and-temperature"
+flat_field = "measure"
+linearity = "measure"
+saturation = "measure"
+

@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+dist/
+build/
+*.egg-info/
+
+# Editors and macOS
+.DS_Store
+.idea/
+.vscode/
+*~
+
+# Local configuration, secrets, and operator notes
+.env
+.env.*
+!.env.example
+AGENTS.md
+
+# Captures, calibration libraries, and generated media
+data/
+results/
+runs/
+calibration/
+*.raw
+*.raw10
+*.raw16
+*.dng
+*.tif
+*.tiff
+*.mp4
+*.mov
+*.bin
+*.h5
+*.hdf5
+*.zarr/
+
+# Private build/source mirrors; publish the focused patch instead
+vendor/
+

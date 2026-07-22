@@ -1,0 +1,59 @@
+diff --git a/src/libcamera/pipeline/rpi/common/pipeline_base.cpp b/src/libcamera/pipeline/rpi/common/pipeline_base.cpp
+--- a/src/libcamera/pipeline/rpi/common/pipeline_base.cpp
++++ b/src/libcamera/pipeline/rpi/common/pipeline_base.cpp
+@@ -1251,7 +1251,32 @@
+ 
+ void CameraData::setDelayedControls(const ControlList &controls, uint32_t delayContext)
+ {
+-	if (!delayedCtrls_->push(controls, delayContext))
++	ControlList scheduledControls = controls;
++
++	/*
++	 * Experimental IMX296 two-exposure scheduling hook. Request-scoped
++	 * ExposureTime controls pass through a shared AGC state before reaching
++	 * this delayed-control queue, so several in-flight requests can collapse
++	 * to the newest exposure.  Apply the alternating values here, where the
++	 * controls are sensor-native and delayContext identifies the request/frame.
++	 *
++	 * This is deliberately opt-in and limited to the IMX296.  66 exposure
++	 * lines produce about 992 us; 1000 lines produce about 14829 us with the
++	 * IMX296 helper's 14.26 us offset and 14.8148 us line period.
++	 */
++	if (utils::secure_getenv("LIBCAMERA_RPI_IMX296_HDR_ALT") &&
++	    sensor_->model() == "imx296") {
++		constexpr int32_t shortExposureLines = 66;
++		constexpr int32_t longExposureLines = 1000;
++		int32_t exposureLines = delayContext % 2
++					? longExposureLines : shortExposureLines;
++
++		scheduledControls.set(V4L2_CID_EXPOSURE, exposureLines);
++		LOG(RPI, Debug) << "IMX296 HDR schedule: context " << delayContext
++				<< " exposure lines " << exposureLines;
++	}
++
++	if (!delayedCtrls_->push(scheduledControls, delayContext))
+ 		LOG(RPI, Error) << "V4L2 DelayedControl set failed";
+ }
+ 
+diff --git a/src/libcamera/pipeline/rpi/pisp/pisp.cpp b/src/libcamera/pipeline/rpi/pisp/pisp.cpp
+--- a/src/libcamera/pipeline/rpi/pisp/pisp.cpp
++++ b/src/libcamera/pipeline/rpi/pisp/pisp.cpp
+@@ -1211,7 +1211,17 @@
+ 		 * so signal the output as unpacked 16-bits in these cases.
+ 		 */
+ 		if (bayer.packing == BayerFormat::Packing::CSI2 || bayer.bitDepth != 16) {
+-			bayer.packing = bayer.packing == BayerFormat::Packing::CSI2
++			/*
++			 * PiSP normally converts CSI-2 packed Bayer to its 8-bit
++			 * compressed transport.  The IMX296 HDR experiment must retain
++			 * every native RAW10 code, so use an unpacked 16-bit container
++			 * when the same opt-in scheduling hook is enabled.
++			 */
++			bool preserveRawCodes =
++				utils::secure_getenv("LIBCAMERA_RPI_IMX296_HDR_ALT") &&
++				sensor_->model() == "imx296";
++			bayer.packing = (bayer.packing == BayerFormat::Packing::CSI2 &&
++					 !preserveRawCodes)
+ 					? BayerFormat::Packing::PISP1
+ 					: BayerFormat::Packing::None;
+ 			bayer.bitDepth = 16;
