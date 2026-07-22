@@ -133,6 +133,18 @@ still and the merged stack. Preview mapping includes negative radiance and is
 strictly affine: `(value - global_min) / (global_max - global_min)` across all
 three channels. It performs no per-channel normalization, gamma, or tone curve.
 
+Apply the project's measured IMX296 RGB gains and 3x3 colour-response matrix to
+an existing NaN-masked stack with:
+
+```bash
+python3 tools/render_colour_response.py STILL_BRACKET_DIR
+```
+
+This creates both an exact full-range affine preview and a more useful shared
+0.1–99.9% linear-window preview. They are explicitly viewing derivatives; the
+underlying Bayer radiance master is not changed. Neither uses gamma, a tone
+curve, or per-channel normalization.
+
 ## Dark-frame calibration library
 
 Dark signal depends on pixel, exposure, analogue gain, and sensor temperature.
