@@ -1,46 +1,64 @@
 # IMX296 full-resolution alternating-exposure RAW HDR
 
-This repository records a working software-only HDR experiment on a Raspberry
-Pi 5 and an Arducam 261 camera enumerating as Sony IMX296. It captures two
-sequential full-resolution native Bayer measurements for each output frame:
+This project captures full-resolution RAW high-dynamic-range (HDR) images. It uses a Raspberry Pi 5 and an Arducam 261 camera with a Sony IMX296 sensor.
 
-- 1456×1088 at approximately 60 sensor frames/s;
-- alternating approximately 1 ms and 14.8 ms exposures;
-- 30 exposure pairs/s;
-- RAW10 sensor codes retained losslessly in little-endian 16-bit containers;
-- actual exposure and sensor timestamp verified from per-frame metadata;
-- separate short- and long-exposure source arrays, plus an optional merged
-  30 fps preview.
+The system records two sequential Bayer measurements for each output frame:
 
-The MP4 is only a viewable derivative. The interleaved RAW master and its two
-split source arrays are the measurement deliverables.
+- Image size: 1456 x 1088 pixels.
+- Sensor rate: approximately 60 frames each second.
+- Short exposure: approximately 1 ms.
+- Long exposure: approximately 14.8 ms.
+- Output rate: 30 exposure pairs each second.
+- Storage: lossless RAW10 codes in little-endian 16-bit containers.
+- Verification: actual exposure and sensor timestamp from each frame.
 
-## Why a small libcamera patch is required
+The interleaved RAW file is the measurement master. The short-exposure and long-exposure arrays are also measurement products.
 
-On `libcamera 0.7.0+rpt20260205`, ordinary Picamera2 and request-level
-libcamera controls did not sustain per-frame exposure alternation. Controls
-passed through shared AGC state before the delayed sensor-control queue and
-eventually collapsed to one exposure. The opt-in IMX296-only patch applies the
-two exposures at that delayed-control boundary, keyed by frame context. It also
-selects uncompressed `SBGGR16` transport instead of PiSP's usual proprietary
-8-bit compressed RAW transport.
+The MP4 file is only a viewable derivative. Do not use the MP4 file as scientific data.
 
-The experiment is enabled only when:
+## Verified hardware
+
+The verified system has these items:
+
+- Raspberry Pi 5.
+- Arducam 261 camera.
+- Sony IMX296 sensor.
+- 1456 x 1088 RAW10 sensor mode.
+
+The system does not require an external trigger, GPIO, soldering, wiring, boot changes, or kernel changes. It does not require a system-wide libcamera installation.
+
+## Why the libcamera patch is necessary
+
+Standard Picamera2 and libcamera controls did not keep the exposure sequence stable. The controls passed through shared automatic gain control state.
+
+The delayed sensor-control queue then received one exposure value. Thus, the alternating exposure sequence stopped.
+
+The optional patch applies the two exposures at the delayed sensor-control boundary. It uses the frame context to select the applicable exposure.
+
+The patch operates only with the IMX296 sensor. It also selects uncompressed `SBGGR16` transport instead of the usual compressed RAW transport.
+
+Use the patch with libcamera tag `v0.7.0+rpt20260205`. The patch and its build instructions are in [`patches/`](patches/).
+
+Do not replace the system camera stack. Use process-local library and IPA paths.
+
+## Prepare the camera software
+
+1. Build the patch for the specified libcamera tag.
+2. Set the process-local library and IPA paths.
+3. Enable the IMX296 alternating-exposure mode:
 
 ```bash
 export LIBCAMERA_RPI_IMX296_HDR_ALT=1
 ```
 
-Build the patch against Raspberry Pi's exact
-`v0.7.0+rpt20260205` libcamera tag and run the resulting libraries through
-process-local `LD_LIBRARY_PATH`/IPA paths. Do not replace the system camera
-stack. The patch and build notes are in `patches/`.
+## Capture an alternating-exposure sequence
 
-## Capture
+The capture program first records the frames in memory. It writes the frames to storage after the camera stops.
 
-`experiments/libcamera_raw_sequence.py` captures into RAM first and flushes to
-disk after the camera stops, so storage and network traffic cannot stall the
-sensor. A typical two-second run retains 120 frames after startup:
+This method prevents storage or network traffic from stopping the sensor. A typical two-second run keeps 120 frames after startup.
+
+1. Enable the patched camera software.
+2. Run the capture command:
 
 ```bash
 python3 experiments/libcamera_raw_sequence.py \
@@ -48,161 +66,180 @@ python3 experiments/libcamera_raw_sequence.py \
   --frame-us 16667 --buffers 4 --output-dir RUN_DIR
 ```
 
-The patch quantizes those requests to the sensor's actual 992 µs and 14,829 µs
-exposures. Trust `frames.csv`, not the requested values. A valid 120-frame run
-has 60 frames at each exposure, no repeated adjacent exposure, and sensor
-timestamp intervals close to 16,667 µs.
+3. Read the actual exposure values from `frames.csv`.
+4. Confirm that the file contains 60 frames at each exposure.
+5. Confirm that adjacent frames do not have the same exposure.
+6. Confirm that sensor timestamp intervals are near 16,667 us.
 
-Split the interleaved master into untouched short and long arrays:
+The patch converts the requested exposures to 992 us and 14,829 us. The metadata values are the authoritative values.
+
+## Split the RAW master
+
+Split the interleaved master into unchanged short-exposure and long-exposure arrays:
 
 ```bash
 python3 tools/split_raw_sequence.py RUN_DIR
 ```
 
-## HDR merge and tone mapping
+## Make the HDR preview
 
-`tools/merge_hdr_sequence.py` works in the Bayer domain. It subtracts RAW10
-black code 60 and divides each measurement by its metadata exposure time to
-form linear radiance estimates. It prefers the cleaner long exposure, then
-cross-fades from long to short as the long RAW code rises from 820 to 980.
+The merge tool operates in the Bayer domain. It subtracts RAW10 black code 60 from each measurement.
 
-The preview then uses a bilinear BGGR demosaic, fixed white balance, a fixed
-3×3 colour-correction matrix, and a global white point taken from the first
-merged frame's 99.5th percentile. Exposure is scaled to that white point, a
-Reinhard curve `x / (1 + x)` compresses highlights, and the result is encoded
-to sRGB and H.264. There is no local tone mapping or temporal adaptation.
-This MP4 is a viewing convenience only, not the scientific output.
+The tool divides each result by its metadata exposure time. This operation produces a linear radiance estimate.
+
+The merge uses the long exposure where it is valid. It changes gradually to the short exposure between RAW codes 820 and 980.
+
+The preview process uses these operations:
+
+- Bilinear BGGR demosaic.
+- Fixed white balance.
+- Fixed 3 x 3 color-correction matrix.
+- Global white point from the first merged frame.
+- Reinhard highlight compression.
+- sRGB display encoding.
+- H.264 video encoding.
+
+The preview does not use local tone mapping or temporal adaptation.
+
+Make the preview:
 
 ```bash
 python3 tools/merge_hdr_sequence.py RUN_DIR
 ```
 
-## Linear radiance output
+## Make linear radiance output
 
-The measurement product follows the radiometric order explicitly:
+The linear-radiance process uses this order:
 
-1. interpolate a per-pixel virtual dark at the frame's actual metadata exposure;
-2. subtract it from the measurement in native Bayer space;
-3. divide the result by actual exposure time in seconds;
-4. retain float32 Bayer samples, including negative noise excursions.
+1. Interpolate a virtual dark frame for the actual exposure.
+2. Subtract the virtual dark frame in the Bayer domain.
+3. Divide the result by the actual exposure time in seconds.
+4. Keep the float32 Bayer samples, including negative noise values.
 
-No demosaic, clamp, white balance, colour matrix, gamma, tone curve, or video
-encoding is applied. Alternating exposure pairs may be fused with a saturation
-cross-fade after both sources have independently reached linear radiance units.
+The process does not apply a demosaic, clamp, white balance, color matrix, gamma, tone curve, or video encoding.
+
+Make the linear-radiance output:
 
 ```bash
 python3 tools/calibrate_linear_radiance.py RUN_DIR DARK_LIBRARY_DIR
 ```
 
-The output is little-endian float32 BGGR Bayer radiance in RAW10 counts per
-second. Untouched calibrated sources, optional fused pairs, hashes, and exact
-processing metadata are recorded under `linear_radiance/`.
+The output uses little-endian float32 BGGR Bayer values. Its unit is RAW10 counts each second.
 
-For independent stills rather than a stream, `scripts/capture_still_bracket.sh`
-captures one retained RAW image per 1–2–5 exposure point from 1 ms through
-10 seconds. Each point has its own metadata and hash and can be passed to the
-same calibration tool independently.
+The `linear_radiance/` directory contains the calibrated sources, optional fused pairs, hashes, and processing metadata.
 
-Stack calibrated stills into one linear HDR Bayer radiance mosaic with an
-explicit clipped-sample mask:
+## Capture an independent still bracket
+
+The still-capture script records one RAW image at each exposure point. It uses a 1-2-5 sequence from 1 ms through 10 seconds.
+
+Each image has its own metadata and hash.
+
+Run the still-capture script:
+
+```bash
+scripts/capture_still_bracket.sh
+```
+
+## Stack calibrated stills
+
+The stack tool replaces each clipped RAW10 value with `NaN`. It then calculates an exposure-squared weighted mean from finite samples.
+
+Clipped samples have no effect on the result. Long exposures supply clean data, and short exposures supply valid highlight data.
+
+Make the stack:
 
 ```bash
 python3 tools/stack_linear_radiance.py STILL_BRACKET_DIR
 ```
 
-Every native RAW10 value at code 1023 is replaced by `NaN` before merging. The
-output is an exposure-squared weighted mean of finite radiance samples only;
-clipped samples have exactly zero influence. This favours cleaner long samples
-where they remain valid and lets short samples take over clipped highlights.
-Pass `--weighting uniform` when an unweighted finite mean is specifically
-required. The stack remains float32 BGGR counts/second and
-is written both as a self-describing float32 TIFF and as a headerless `.raw32f`
-computational array. A 16-bit TIFF contributor map records the finite sample
-count at every Bayer pixel.
+Use `--weighting uniform` only when you require an unweighted finite mean.
 
-Export every bracket RAW and calibrated still to TIFF, plus a merged 48-bit
-linear RGB TIFF, with:
+The output includes these files:
+
+- A self-describing float32 TIFF file.
+- A headerless `.raw32f` computation array.
+- A 16-bit TIFF contributor map.
+
+The contributor map gives the finite sample count at each Bayer pixel.
+
+## Export still TIFF files
+
+Export the RAW images, calibrated images, and merged 48-bit linear RGB image:
 
 ```bash
 python3 tools/export_still_bracket_tiffs.py STILL_BRACKET_DIR
 ```
 
-The exporter also creates commonly scaled 16-bit linear Bayer viewing copies.
-Those copies use one global multiplicative white scale only—no gamma or tone
-curve—while the float32 physical-units TIFFs remain unchanged.
+The exporter also makes 16-bit linear Bayer viewing copies. These copies use one global white scale without gamma or a tone curve.
 
-It additionally writes demosaiced 48-bit colour previews for every calibrated
-still and the merged stack. Preview mapping uses one shared RGB interval from
-the 0.01st to 99.99th percentile, discarding the bottom and top 0.01% so hot
-pixels cannot consume the display range. Values inside that interval are mapped
-strictly affinely across all three channels. It performs no per-channel
-normalization, gamma, or tone curve.
+The float32 physical-unit TIFF files do not change. The exporter also makes 48-bit color previews of each calibrated image and the merged image.
 
-Apply the project's measured IMX296 RGB gains and 3x3 colour-response matrix to
-an existing NaN-masked stack with:
+One shared RGB interval controls all preview images. The interval excludes the lowest and highest 0.01 percent of values.
+
+This limit prevents hot pixels from using the complete display range. The preview does not use channel-specific normalization, gamma, or a tone curve.
+
+## Apply the measured color response
+
+Apply the measured IMX296 RGB gains and color-response matrix:
 
 ```bash
 python3 tools/render_colour_response.py STILL_BRACKET_DIR
 ```
 
-This creates both an exact full-range affine preview and a more useful shared
-0.1–99.9% linear-window preview. They are explicitly viewing derivatives; the
-underlying Bayer radiance master is not changed. Neither uses gamma, a tone
-curve, or per-channel normalization. It also creates a display-only tone-mapped
-TIFF using positive-value exposure scaling, Reinhard highlight compression,
-and the sRGB display transfer function; all tone-map parameters are recorded in
-`colour_response_preview.json`. Reinhard is applied to luminance once, not to
-the three channels independently. Chroma remains a Cartesian direction from
-the neutral axis and is contracted only enough to intersect the valid
-constant-luminance section of the display RGB cube. This removes highlight
-colour coordinate singularities without changing the scene-radiance geometry.
+The tool makes a full-range affine preview and a shared 0.1-99.9 percent preview. These files are viewable derivatives.
 
-## Dark-frame calibration library
+The Bayer radiance master does not change. The previews do not use gamma, a tone curve, or channel-specific normalization.
 
-Dark signal depends on pixel, exposure, analogue gain, and sensor temperature.
-Keep gain fixed at 1.0 and record temperature with each set. A useful initial
-grid is a 1–2–5 sequence per decade:
+The tool also makes a display-only tone-mapped TIFF file. Its metadata records all tone-map parameters.
+
+The tone map applies the Reinhard operation to luminance one time. It changes chroma only when the display RGB limit makes that change necessary.
+
+## Make a dark-frame calibration library
+
+Dark signal depends on the pixel, exposure, analog gain, and sensor temperature. Keep the analog gain at 1.0.
+
+Record the sensor temperature with each set. Use this initial exposure grid:
 
 ```text
 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000 ms
 ```
 
-Capture at least 10 RAW frames per point with the lens cap fitted, preserving
-individual frames as well as their average. For a target such as 55 ms,
-interpolate each pixel between the bracketing 50 ms and 100 ms masters. With a
-larger library, fitting each pixel as offset plus dark-current slope versus
-exposure is generally more stable than unconstrained extrapolation. Hot pixels
-may need a separate mask or robust mean.
+1. Install the lens cap.
+2. Capture at least 10 RAW frames at each exposure.
+3. Keep the individual frames and their average.
+4. Use a separate still or slow-sequence mode for long exposures.
 
-Long dark exposures require a sensor frame duration longer than the exposure;
-they cannot be collected in the fixed 60 fps HDR stream. Calibration capture
-therefore runs as a separate still/slow-sequence mode.
+The fixed 60 fps stream cannot collect long dark exposures. The sensor frame duration must be longer than the exposure.
 
-Capture the full grid on the Pi with `scripts/capture_dark_library.sh`. Set
-`RPICAM_RETAINED_FRAMES` when more than the default ten retained frames per
-exposure are required. `RPICAM_DISCARD_FRAMES` controls the default eight
-startup frames discarded before each retained set. After mirroring the run,
-build float32 mean masters and synthesize a virtual dark:
+Capture the dark-frame grid:
+
+```bash
+scripts/capture_dark_library.sh
+```
+
+Set `RPICAM_RETAINED_FRAMES` to change the number of retained frames. Set `RPICAM_DISCARD_FRAMES` to change the number of discarded startup frames.
+
+Build the float32 mean masters and make a virtual dark frame:
 
 ```bash
 python3 tools/build_dark_library.py DARK_RUN_DIR
 python3 tools/synthesize_dark.py DARK_RUN_DIR 55000 virtual_55000us.raw32f
 ```
 
-Interpolation uses actual metadata exposure times rather than nominal folder
-names and refuses extrapolation beyond the calibrated range.
+The interpolation uses actual metadata exposure times. The tool stops if the requested exposure is outside the calibrated range.
 
-## Hardware and safety
+## Run the tests
 
-Verified target: Raspberry Pi 5, IMX296, 1456×1088 RAW10. No external trigger,
-GPIO, soldering, wiring, boot changes, kernel changes, or system-wide libcamera
-installation is required or used.
-
-## Tests
+Run all unit tests:
 
 ```bash
 python3 -m unittest discover -s tests -v
 ```
 
-Capture files are intentionally excluded by `.gitignore`; publish hashes and
-small metadata manifests separately if a run needs to be cited.
+## Data policy
+
+The `.gitignore` file excludes capture files. Publish hashes and small metadata manifests when a run requires a public reference.
+
+## Author
+
+Swithin Feely maintains this project. The GitHub account is [`swithmario`](https://github.com/swithmario).
