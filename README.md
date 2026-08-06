@@ -1,5 +1,18 @@
 # IMX296 full-resolution alternating-exposure RAW HDR
 
+<!-- repository-status:start -->
+## Repository status
+
+This repository is private.
+
+- The current state is **active**.
+- The repository contains full-resolution RAW capture, metadata checks, frame separation, calibration, high-dynamic-range processing, and output tools.
+- The audit found source, tests, architecture documentation, and proof images. It did not repeat the hardware tests.
+- The work is hardware-adjacent. It does not establish firmware, device-driver, or operating-system development.
+- Publication decision: **Complete one focused licence and verification review before publication.**
+<!-- repository-status:end -->
+
+
 This project captures full-resolution RAW high-dynamic-range (HDR) images. It uses a Raspberry Pi 5 and an Arducam 261 camera with a Sony IMX296 sensor.
 
 The system records two sequential Bayer measurements for each output frame:
