@@ -3,17 +3,20 @@
 <!-- repository-status:start -->
 ## Repository status
 
-This repository is private.
+This repository is public.
 
 - The current state is **active**.
 - The repository contains full-resolution RAW capture, metadata checks, frame separation, calibration, high-dynamic-range processing, and output tools.
-- The audit found source, tests, architecture documentation, and proof images. It did not repeat the hardware tests.
+- The repository contains source, tests, architecture documents, and retained hardware-validation images and metadata.
 - The work is hardware-adjacent. It does not establish firmware, device-driver, or operating-system development.
-- Publication decision: **Complete one focused licence and verification review before publication.**
+- The local unit tests do not exercise the Raspberry Pi camera hardware.
+- Publication status: **Published project under active development.**
 <!-- repository-status:end -->
 
 
 This project captures full-resolution RAW high-dynamic-range (HDR) images. It uses a Raspberry Pi 5 and an Arducam 261 camera with a Sony IMX296 sensor.
+
+![IMX296 RAW mosaic proof image](imx296-raw-bggr-mosaic-colour.png)
 
 The system records two sequential Bayer measurements for each output frame:
 
@@ -55,6 +58,15 @@ Use the patch with libcamera tag `v0.7.0+rpt20260205`. The patch and its build i
 Do not replace the system camera stack. Use process-local library and IPA paths.
 
 ## Prepare the camera software
+
+Install the local processing package before you use the tools:
+
+```bash
+python3 -m pip install -e .
+```
+
+The capture experiments also require the Raspberry Pi `libcamera` Python
+bindings. The preview and video tools call `ffmpeg` as an external command.
 
 1. Build the patch for the specified libcamera tag.
 2. Set the process-local library and IPA paths.
@@ -246,13 +258,26 @@ The interpolation uses actual metadata exposure times. The tool stops if the req
 Run all unit tests:
 
 ```bash
+python3 -m pip install -e .
 python3 -m unittest discover -s tests -v
 ```
 
+These tests validate exposure calculations and colour-processing functions.
+They do not capture data or validate connected camera hardware.
+
 ## Data policy
+
 
 The `.gitignore` file excludes capture files. Publish hashes and small metadata manifests when a run requires a public reference.
 
 ## Author
 
 Swithin Feely maintains this project. The GitHub account is [`swithmario`](https://github.com/swithmario).
+
+## Copyright and third-party code
+
+The original project code has no open-source licence. See
+[`COPYRIGHT.md`](COPYRIGHT.md). The libcamera patch modifies upstream files
+that use LGPL-2.1-or-later. See [`THIRD_PARTY.md`](THIRD_PARTY.md) and the
+licence copy in
+[`patches/LICENSE-LGPL-2.1-or-later.txt`](patches/LICENSE-LGPL-2.1-or-later.txt).

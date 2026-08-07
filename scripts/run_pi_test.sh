@@ -9,10 +9,10 @@ fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(dirname -- "$SCRIPT_DIR")
-PI_HOST=${RPICAM_HOST:-169.254.114.23}
+PI_HOST=${RPICAM_HOST:?Set RPICAM_HOST to the Raspberry Pi host name or address}
 PI_USER=${RPICAM_USER:-user}
-PI_KEY=${RPICAM_SSH_KEY:-/Users/swith/.ssh/id_ed25519_rpicam}
-REMOTE_ROOT=${RPICAM_REMOTE_RUNS:-/home/user/rpicam-runs}
+PI_KEY=${RPICAM_SSH_KEY:-}
+REMOTE_ROOT=${RPICAM_REMOTE_RUNS:-/home/$PI_USER/rpicam-runs}
 
 test_name=$1
 shift
@@ -28,10 +28,15 @@ printf -v escaped_command '%q ' "$@"
 echo "Pi run:  $remote_run"
 echo "Mac mirror: $REPO_ROOT/runs/pi/$run_id"
 
-ssh \
-    -i "$PI_KEY" \
-    -o BatchMode=yes \
-    -o ConnectTimeout=5 \
+ssh_options=(
+    -o BatchMode=yes
+    -o ConnectTimeout=5
+)
+if [[ -n $PI_KEY ]]; then
+    ssh_options+=(-i "$PI_KEY")
+fi
+
+ssh "${ssh_options[@]}" \
     "$PI_USER@$PI_HOST" \
     "mkdir -p '$remote_run'; cd '$remote_run'; export RPICAM_RUN_DIR='$remote_run'; $escaped_command"
 test_status=$?

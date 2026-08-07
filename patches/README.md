@@ -1,5 +1,19 @@
 # libcamera patch
 
+This directory contains a patch to two Raspberry Pi libcamera files at tag
+`v0.7.0+rpt20260205`:
+
+- `src/libcamera/pipeline/rpi/common/pipeline_base.cpp`
+- `src/libcamera/pipeline/rpi/pisp/pisp.cpp`
+
+The upstream files identify themselves as LGPL-2.1-or-later and attribute
+copyright to Raspberry Pi Ltd. The patch is distributed under the same
+LGPL-2.1-or-later terms. See
+[`LICENSE-LGPL-2.1-or-later.txt`](LICENSE-LGPL-2.1-or-later.txt).
+
+The remaining original files in this repository are not covered by that
+third-party licence notice.
+
 Apply `imx296-hdr-alt.patch` to Raspberry Pi libcamera tag
 `v0.7.0+rpt20260205`, configure a separate Meson build directory, and run that
 build through process-local library and IPA search paths.

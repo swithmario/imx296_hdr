@@ -29,10 +29,9 @@ available` is therefore expected and is not a fault diagnosis.
 ## Network
 
 - Direct Ethernet carrier: 1 Gbit/s full duplex
-- Mac address during setup: `169.254.114.22/16`
-- Pi address during setup: `169.254.114.23/16`
-- SSH public-key authentication works for `user@169.254.114.23`
-- The Pi address was assigned with `ip address add` and is not persistent
+- A direct link-local Ethernet connection was used during setup.
+- SSH public-key authentication was verified.
+- The temporary Pi address was not persistent.
 
 ## Firmware configuration
 
