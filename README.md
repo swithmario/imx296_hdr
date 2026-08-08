@@ -1,22 +1,18 @@
 # IMX296 full-resolution alternating-exposure RAW HDR
 
-<!-- repository-status:start -->
-## Repository status
+**Full-resolution alternating-exposure RAW HDR capture on the Sony IMX296.**
+A Raspberry Pi 5 imaging pipeline that alternates short and long sensor
+exposures, verifies the actual exposure and timestamp metadata, and
+reconstructs calibrated linear-radiance output.
 
-This repository is public.
-
-- The current state is **active**.
-- The repository contains full-resolution RAW capture, metadata checks, frame separation, calibration, high-dynamic-range processing, and output tools.
-- The repository contains source, tests, architecture documents, and retained hardware-validation images and metadata.
-- The work is hardware-adjacent. It does not establish firmware, device-driver, or operating-system development.
-- The local unit tests do not exercise the Raspberry Pi camera hardware.
-- Publication status: **Published project under active development.**
-<!-- repository-status:end -->
-
-
-This project captures full-resolution RAW high-dynamic-range (HDR) images. It uses a Raspberry Pi 5 and an Arducam 261 camera with a Sony IMX296 sensor.
+I built it to retain the sensor measurements as scientific data rather than
+treating HDR as a display effect. The interleaved RAW sequence is the master;
+preview video, demosaiced images and tone-mapped TIFFs are traceable
+derivatives.
 
 ![IMX296 RAW mosaic proof image](imx296-raw-bggr-mosaic-colour.png)
+
+## Captured result
 
 The system records two sequential Bayer measurements for each output frame:
 
@@ -264,6 +260,17 @@ python3 -m unittest discover -s tests -v
 
 These tests validate exposure calculations and colour-processing functions.
 They do not capture data or validate connected camera hardware.
+
+## Scope and verification
+
+This is an active, hardware-adjacent imaging project. The repository contains
+the capture and processing source, device-independent tests, architecture
+notes, and retained hardware-validation images and metadata. The unit tests
+verify exposure calculations and colour-processing functions; connected-camera
+behaviour is verified separately on the Raspberry Pi system.
+
+The work interfaces with libcamera and the IMX296 sensor, but it is not
+presented as firmware, device-driver or operating-system development.
 
 ## Data policy
 
